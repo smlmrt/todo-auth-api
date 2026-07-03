@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Güvenli Görev Yöneticisi</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 500px;
+            margin: 40px auto;
+            padding: 20px;
+            background-color: #f4f7f6;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        h2 { color: #333; }
+        input {
+            width: 100%;
+            padding: 10px;
+            margin: 8px 0;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 5px;
+        }
+        button.login-btn { background-color: #007bff; }
+        button.delete-btn { background-color: #dc3545; }
+        button.toggle-btn { background-color: #ffc107; color: #333; }
+        button:hover { opacity: 0.9; }
+        ul { list-style-type: none; padding: 0; }
+        li {
+            background: white;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .completed {
+            text-decoration: line-through;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Kullanıcı İşlemleri</h2>
+    <input type="text" id="username" placeholder="Kullanıcı Adı">
+    <input type="password" id="password" placeholder="Şifre">
+    <button class="login-btn" onclick="login()">Giriş Yap</button>
+    <button onclick="register()">Kayıt Ol</button>
+
+    <hr style="margin: 25px 0; border: 0; border-top: 1px solid #ccc;">
+
+    <h2>Görevlerim</h2>
+    <input type="text" id="taskTitle" placeholder="Yeni Görev Yazın...">
+    <button onclick="addTask()">Görev Ekle</button>
+    <ul id="taskList"></ul>
+
+    <script>
+        // Backend API adresiniz (dotnet run yaptığınız port ile aynı olmalı)
+        const API_URL = 'http://localhost:5221/api'; 
+
+        // 1. KULLANICI KAYIT FONKSİYONU
+        async function register() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            if(!username || !password) {
+                alert("Lütfen kullanıcı adı ve şifre girin!");
+                return;
+            }
+
+            const response = await fetch(`${API_URL}/Auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+
+            if (response.ok) {
+                alert('Kayıt başarılı! Şimdi aynı bilgilerle "Giriş Yap" butonuna basabilirsiniz.');
+            } else {
+                const text = await response.text();
+                alert('Kayıt başarısız: ' + text);
+            }
+        }
+
+        // 2. KULLANICI GİRİŞ FONKSİYONU
+        async function login() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            const response = await fetch(`${API_URL}/Auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                localStorage.setItem('token', data.token); // Dijital anahtarı tarayıcıya kaydet
+                alert('Giriş başarılı! Görevleriniz yükleniyor.');
+                loadTasks();
+            } else {
+                alert('Giriş başarısız! Kullanıcı adı veya şifre hatalı.');
+            }
+        }
+
+        // 3. GÖREVLERİ LİSTELEME FONKSİYONU
+        async function loadTasks() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                console.log("Token bulunamadı, lütfen önce giriş yapın.");
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_URL}/ToDoItems`, {
+                    headers: { 'Authorization': 'Bearer ' + token }
+                });
+
+                if (!response.ok) {
+                    console.error("API Hatası:", response.status);
+                    return;
+                }
+
+                const tasks = await response.json();
+                const list = document.getElementById('taskList');
+                list.innerHTML = ''; // Eski listeyi temizle
+
+                tasks.forEach(t => {
+                    const li = document.createElement('li');
+                    
+                    // Eğer görev tamamlandıysa üstünü çiz
+                    if (t.isCompleted) {
+                        li.className = 'completed';
+                    }
+
+                    li.innerHTML = `
+                        <span>${t.title}</span>
+                        <div>
+                            <button class="toggle-btn" onclick="toggleTask(${t.id}, ${t.isCompleted})">✓</button>
+                            <button class="delete-btn" onclick="deleteTask(${t.id})">Sil</button>
+                        </div>
+                    `;
+                    list.appendChild(li);
+                });
+            } catch (err) {
+                console.error("Sorgu Hatası:", err);
+            }
+        }
+
+        // 4. GÖREV EKLEME FONKSİYONU
+        async function addTask() {
+            const title = document.getElementById('taskTitle').value;
+            const token = localStorage.getItem('token');
+            
+            if(!title) {
+                alert("Görev başlığı boş olamaz!");
+                return;
+            }
+
+            const response = await fetch(`${API_URL}/ToDoItems`, {
+                method: 'POST',
+                headers: { 
+                    'Authorization': 'Bearer ' + token,
+                    'Content-Type': 'application/json' 
+                },
+                body: JSON.stringify({ title: title, isCompleted: false })
+            });
+
+            if (response.ok) {
+                document.getElementById('taskTitle').value = ''; // Girdiyi temizle
+                loadTasks(); // Listeyi yenile
+            } else {
+                alert("Ekleme başarısız! Giriş yaptığınızdan emin olun.");
+            }
+        }
+
+        // 5. GÖREV SİLME FONKSİYONU
+        async function deleteTask(id) {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${API_URL}/ToDoItems/${id}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+
+            if (response.ok) {
+                loadTasks();
+            } else {
+                alert("Silme işlemi başarısız.");
+            }
+        }
+
+        // 6. GÖREV DURUMU GÜNCELLEME (TAMAMLA/GERİ AL) FONKSİYONU
+        async function toggleTask(id, isCompleted) {
+            const token = localStorage.getItem('token');
+            const response = await fetch(`${API_URL}/ToDoItems/${id}`, {
+                method: 'PUT',
+                headers: { 
+                    'Authorization': 'Bearer ' + token,
+                    'Content-Type': 'application/json' 
+                },
+                body: JSON.stringify({ isCompleted: !isCompleted }) // Mevcut durumun tersini gönder
+            });
+
+            if (response.ok) {
+                loadTasks();
+            } else {
+                alert("Güncelleme başarısız.");
+            }
+        }
+
+        // Sayfa ilk açıldığında eğer önceden giriş yapılmışsa görevleri otomatik getir
+        window.onload = loadTasks;
+    </script>
+</body>
+</html>
